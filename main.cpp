@@ -62,10 +62,16 @@ int main() {
   
   // Load gameplay background image
   sf::Texture gameBackgroundTexture;
-  bool gameBgLoaded = gameBackgroundTexture.loadFromFile("sprites/bttf-sky.webp");
+  bool gameBgLoaded = gameBackgroundTexture.loadFromFile("sprites/skyline-art.png");
   sf::Sprite gameBackground(gameBackgroundTexture);
   if (gameBgLoaded) {
-    gameBackground.setPosition(sf::Vector2f(0.f, 0.f));
+    sf::Vector2f gameBackgroundSize = sf::Vector2f(gameBackgroundTexture.getSize().x, gameBackgroundTexture.getSize().y);
+    gameBackground.setOrigin(gameBackgroundSize * 0.5f);
+    gameBackground.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f));
+    float scaleX = static_cast<float>(window.getSize().x) / gameBackgroundSize.x;
+    float scaleY = static_cast<float>(window.getSize().y) / gameBackgroundSize.y;
+    float coverScale = std::max(scaleX, scaleY);
+    gameBackground.setScale(sf::Vector2f(coverScale, coverScale));
   }
 
   std::vector<sf::Sprite> blocks;
