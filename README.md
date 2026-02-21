@@ -9,6 +9,10 @@ clang++ -std=c++17 main.cpp -o sfml-app \
 
 
 
+<!-- NEW Compile code -->
+clang++ -std=c++17 main.cpp -o sfml-app -I/opt/homebrew/opt/sfml/include -L/opt/homebrew/opt/sfml/lib -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -framework Foundation
+
+
 
 <!-- Used to run compiled code -->
 ./sfml-app
