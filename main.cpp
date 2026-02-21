@@ -25,20 +25,17 @@ int main() {
   // Load font
   sf::Font font;
   bool fontLoaded = font.openFromFile("/Library/Fonts/Arial.ttf") ||
-                    font.openFromFile("/System/Library/Fonts/Helvetica.ttc") ||
-                    font.openFromFile("/opt/homebrew/opt/sfml/share/SFML/fonts/DroidSansMono.ttf");
+                    font.openFromFile("/System/Library/Fonts/Helvetica.ttc");
 
   // Background music
   sf::Music backgroundMusic;
-  if (backgroundMusic.openFromFile("audio/background.ogg") ||
-      backgroundMusic.openFromFile("audio/background.wav") ||
-      backgroundMusic.openFromFile("audio/back-to-the-arcade.mp3")) {
+  if (backgroundMusic.openFromFile("audio/back-to-the-arcade.mp3")) {
     backgroundMusic.setVolume(50.f);
     backgroundMusic.play();
   }
 
   sf::Texture playerTexture;
-  if (!playerTexture.loadFromFile("sprites/car.png")) {
+  if (!playerTexture.loadFromFile("sprites/car-small.png")) {
     return -1;
   }
 
@@ -46,13 +43,21 @@ int main() {
   playerSprite.setOrigin(sf::Vector2f(playerTexture.getSize().x * 0.5f, playerTexture.getSize().y * 0.5f));
   playerSprite.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f));
   playerSprite.setScale(sf::Vector2f(0.5f, 0.5f));
+
+
+  sf::Texture enemyBlockTexture;
+  if (!enemyBlockTexture.loadFromFile("sprites/biff-face.png")) {
+    return -1;
+  }
   
   // Load menu background image
   sf::Texture menuBackgroundTexture;
   bool menuBgLoaded = menuBackgroundTexture.loadFromFile("sprites/bttf-screen.png");
   sf::Sprite menuBackground(menuBackgroundTexture);
   if (menuBgLoaded) {
-    menuBackground.setPosition(sf::Vector2f(0.f, 0.f));
+    sf:: Vector2f menuBackgroundSize = sf::Vector2f(menuBackgroundTexture.getSize().x, menuBackgroundTexture.getSize().y);
+    menuBackground.setOrigin(menuBackgroundSize * 0.5f);
+    menuBackground.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f));
   }
   
   // Load gameplay background image
@@ -63,7 +68,7 @@ int main() {
     gameBackground.setPosition(sf::Vector2f(0.f, 0.f));
   }
 
-  std::vector<sf::CircleShape> blocks;
+  std::vector<sf::Sprite> blocks;
   std::vector<Point> points;
   std::mt19937 rng(std::random_device{}());
   std::uniform_real_distribution<float> distY(0.f, 1200.f);
@@ -83,22 +88,18 @@ int main() {
 
   sf::Clock spawnClock;
 
-  // Helper: circle vs axis-aligned-rectangle collision using FloatRect
+  // Helper: circle vs axis-aligned-rectangle collision (for points)
   auto circleRectCollision = [](const sf::CircleShape& c, const sf::FloatRect& r) {
     float cx = c.getPosition().x + c.getRadius();
     float cy = c.getPosition().y + c.getRadius();
-
     float rx = r.position.x;
     float ry = r.position.y;
     float rw = r.size.x;
     float rh = r.size.y;
-
     float closestX = std::clamp(cx, rx, rx + rw);
     float closestY = std::clamp(cy, ry, ry + rh);
-
     float dx = cx - closestX;
     float dy = cy - closestY;
-
     return (dx * dx + dy * dy) <= (c.getRadius() * c.getRadius());
   };
 
@@ -170,10 +171,10 @@ int main() {
 
       // Spawn new blocks from right side
       if (spawnClock.getElapsedTime().asSeconds() > spawnInterval) {
-        sf::CircleShape block(10.f);
-        block.setPosition(sf::Vector2f(1200.f, distY(rng)));
-        block.setFillColor(sf::Color::Yellow);
-        blocks.push_back(block);
+        
+        sf::Sprite enemyBlock(enemyBlockTexture);
+        enemyBlock.setPosition(sf::Vector2f(1200.f, distY(rng)));
+        blocks.push_back(enemyBlock);
         
         // Randomly spawn a point every 2nd-3rd block
         if (rng() % 3 == 0) {
@@ -202,7 +203,7 @@ int main() {
       bool collided = false;
       sf::FloatRect playerBounds = playerSprite.getGlobalBounds();
       for (const auto& block : blocks) {
-        if (circleRectCollision(block, playerBounds)) {
+        if (block.getGlobalBounds().findIntersection(playerBounds)) {
           collided = true;
           break;
         }
@@ -221,18 +222,7 @@ int main() {
           points.erase(points.begin() + i);
           --i;
         }
-      }
-
-      // Remove blocks that leave screen
-      blocks.erase(
-        std::remove_if(blocks.begin(), blocks.end(),
-          [](const sf::CircleShape& b) {
-            return b.getPosition().x < 0.f;
-          }
-        ),
-        blocks.end()
-      );
-      
+      } 
       // Remove points that leave screen
       points.erase(
         std::remove_if(points.begin(), points.end(),
