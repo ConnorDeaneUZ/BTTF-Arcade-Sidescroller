@@ -1,3 +1,4 @@
+#include <array>
 #include <iostream>
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
@@ -9,12 +10,13 @@
 
 enum class GameState {
   Menu,
-  Playing
+  Playing,
+  GameOver
 };
 
 struct Point {
-  sf::CircleShape shape;
-  int value;
+  explicit Point(const sf::Texture& tex) : sprite(tex) {}
+  sf::Sprite sprite;
 };
 
 int main() {
@@ -27,12 +29,35 @@ int main() {
   bool fontLoaded = font.openFromFile("/Library/Fonts/Arial.ttf") ||
                     font.openFromFile("/System/Library/Fonts/Helvetica.ttc");
 
-  // Background music
+  // Background music (one of three tracks chosen at random each game)
+  const std::array<const char*, 3> gameMusicPaths = {
+    "audio/back-to-the-arcade.mp3",
+    "audio/back-to-the-arcade-2.mp3",
+    "audio/back-to-the-arcade-3.mp3"
+  };
   sf::Music backgroundMusic;
-  if (backgroundMusic.openFromFile("audio/back-to-the-arcade.mp3")) {
-    backgroundMusic.setVolume(50.f);
-    backgroundMusic.play();
+  backgroundMusic.setVolume(50.f);
+
+  sf::Music menuMusic;
+  if (menuMusic.openFromFile("audio/menu-theme.mp3")) {
+    menuMusic.setVolume(50.f);
+    menuMusic.play();
   }
+
+  sf::Music collectPointSound;
+  if (collectPointSound.openFromFile("audio/collect-point.mp3")) {
+    collectPointSound.setVolume(70.f);
+  }
+
+  sf::Music gameOverSound;
+  if (gameOverSound.openFromFile("audio/game-over.mp3")) {
+    gameOverSound.setVolume(10.f);
+  }
+
+  sf::Music biffVocalSound;
+  if (biffVocalSound.openFromFile("audio/biff-vocal.mp3")) {
+    biffVocalSound.setVolume(100.f);
+}
 
   sf::Texture playerTexture;
   if (!playerTexture.loadFromFile("sprites/car-small.png")) {
@@ -42,14 +67,19 @@ int main() {
   sf::Sprite playerSprite(playerTexture);
   playerSprite.setOrigin(sf::Vector2f(playerTexture.getSize().x * 0.5f, playerTexture.getSize().y * 0.5f));
   playerSprite.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f));
-  playerSprite.setScale(sf::Vector2f(0.5f, 0.5f));
+  playerSprite.setScale(sf::Vector2f(2.f, 2.f));
 
 
   sf::Texture enemyBlockTexture;
   if (!enemyBlockTexture.loadFromFile("sprites/biff-face.png")) {
     return -1;
   }
-  
+
+  sf::Texture pointTexture;
+  if (!pointTexture.loadFromFile("sprites/pepsi-free.png")) {
+    return -1;
+  }
+
   // Load menu background image
   sf::Texture menuBackgroundTexture;
   bool menuBgLoaded = menuBackgroundTexture.loadFromFile("sprites/bttf-screen.png");
@@ -78,7 +108,7 @@ int main() {
   std::vector<Point> points;
   std::mt19937 rng(std::random_device{}());
   std::uniform_real_distribution<float> distY(0.f, 1200.f);
-  std::uniform_int_distribution<int> pointValue(1, 3);
+  std::uniform_int_distribution<int> musicChoice(0, 2);
   
   int score = 0;
 
@@ -93,21 +123,7 @@ int main() {
   float friction = 0.88f;
 
   sf::Clock spawnClock;
-
-  // Helper: circle vs axis-aligned-rectangle collision (for points)
-  auto circleRectCollision = [](const sf::CircleShape& c, const sf::FloatRect& r) {
-    float cx = c.getPosition().x + c.getRadius();
-    float cy = c.getPosition().y + c.getRadius();
-    float rx = r.position.x;
-    float ry = r.position.y;
-    float rw = r.size.x;
-    float rh = r.size.y;
-    float closestX = std::clamp(cx, rx, rx + rw);
-    float closestY = std::clamp(cy, ry, ry + rh);
-    float dx = cx - closestX;
-    float dy = cy - closestY;
-    return (dx * dx + dy * dy) <= (c.getRadius() * c.getRadius());
-  };
+  sf::Clock menuFloatClock;
 
   while (window.isOpen()) {
     // Handle events
@@ -123,7 +139,10 @@ int main() {
           points.clear();
           score = 0;
           playerSprite.setPosition(sf::Vector2f(600.f, 600.f));
-          backgroundMusic.play();
+          menuMusic.stop();
+          if (backgroundMusic.openFromFile(gameMusicPaths[musicChoice(rng)])) {
+            backgroundMusic.play();
+          }
         }
       }
     }
@@ -180,15 +199,15 @@ int main() {
         
         sf::Sprite enemyBlock(enemyBlockTexture);
         enemyBlock.setPosition(sf::Vector2f(1200.f, distY(rng)));
+        enemyBlock.setScale(sf::Vector2f(0.5f, 0.5f));
         blocks.push_back(enemyBlock);
         
         // Randomly spawn a point every 2nd-3rd block
         if (rng() % 3 == 0) {
-          Point newPoint;
-          newPoint.shape.setRadius(7.f);
-          newPoint.value = pointValue(rng);
-          newPoint.shape.setPosition(sf::Vector2f(1200.f, distY(rng)));
-          newPoint.shape.setFillColor(sf::Color::Red);
+          Point newPoint(pointTexture);
+          sf::Vector2u texSize = pointTexture.getSize();
+          newPoint.sprite.setScale(sf::Vector2f(0.3f, 0.3f));
+          newPoint.sprite.setPosition(sf::Vector2f(1200.f, distY(rng)));
           points.push_back(newPoint);
         }
         
@@ -202,7 +221,7 @@ int main() {
       
       // Move points left
       for (auto& point : points) {
-        point.shape.move(sf::Vector2f(-blockSpeed, 0.f));
+        point.sprite.move(sf::Vector2f(-blockSpeed, 0.f));
       }
 
       // Check collision between player and any block
@@ -216,24 +235,30 @@ int main() {
       }
       if (collided) {
         backgroundMusic.stop();
-        gameState = GameState::Menu;
+        gameOverSound.play();
+        biffVocalSound.play();
+        gameState = GameState::GameOver;
         velocityX = 0.f;
         velocityY = 0.f;
       }
       
       // Check collision with collectible points
-      for (int i = 0; i < points.size(); ++i) {
-        if (circleRectCollision(points[i].shape, playerBounds)) {
-          score += points[i].value;
+      bool collectedAny = false;
+      for (int i = static_cast<int>(points.size()) - 1; i >= 0; --i) {
+        if (points[i].sprite.getGlobalBounds().findIntersection(playerBounds)) {
+          score += 1;
           points.erase(points.begin() + i);
-          --i;
+          collectedAny = true;
         }
+      }
+      if (collectedAny) {
+        collectPointSound.play();
       } 
       // Remove points that leave screen
       points.erase(
         std::remove_if(points.begin(), points.end(),
           [](const Point& p) {
-            return p.shape.getPosition().x < 0.f;
+            return p.sprite.getGlobalBounds().position.x + p.sprite.getGlobalBounds().size.x < 0.f;
           }
         ),
         points.end()
@@ -250,7 +275,7 @@ int main() {
         window.draw(block);
       }
       for (const auto& point : points) {
-        window.draw(point.shape);
+        window.draw(point.sprite);
       }
       window.draw(playerSprite);
       
@@ -266,33 +291,30 @@ int main() {
       window.clear(sf::Color::Black);
       
       if (menuBgLoaded) {
+        float centerX = window.getSize().x * 0.5f;
+        float centerY = window.getSize().y * 0.5f;
+        float amplitude = 15.f;
+        float floatSpeed = 0.5f;
+        float offset = amplitude * std::sin(menuFloatClock.getElapsedTime().asSeconds() * floatSpeed * 2.f * 3.14159f);
+        menuBackground.setPosition(sf::Vector2f(centerX, centerY + offset));
         window.draw(menuBackground);
       }
-      
-      // Draw semi-transparent overlay for button area
-      sf::RectangleShape overlay(sf::Vector2f(600.f, 180.f));
-      overlay.setPosition(sf::Vector2f(300.f, 1000.f));
-      overlay.setFillColor(sf::Color(0, 0, 0, 180));
-      window.draw(overlay);
-      
-      // Start button
-      if (fontLoaded) {
-        sf::RectangleShape button(sf::Vector2f(500.f, 120.f));
-        button.setPosition(sf::Vector2f(350.f, 1020.f));
-        button.setFillColor(sf::Color::Green);
-        window.draw(button);
-        
-        sf::Text buttonText(font, "PRESS SPACE TO START", 40);
-        buttonText.setFillColor(sf::Color::Black);
-        buttonText.setPosition(sf::Vector2f(375.f, 1030.f));
-        window.draw(buttonText);
-      } else {
-        // Fallback without font
-        sf::RectangleShape button(sf::Vector2f(500.f, 120.f));
-        button.setPosition(sf::Vector2f(350.f, 1020.f));
-        button.setFillColor(sf::Color::Green);
-        window.draw(button);
-      }
+    } else if (gameState == GameState::GameOver) {
+        window.clear(sf::Color::Black);
+        if (fontLoaded) {
+          sf::Text gameOverText(font, "GAME OVER", 80);
+          gameOverText.setFillColor(sf::Color::Red);
+          sf::FloatRect textBounds = gameOverText.getLocalBounds();
+          gameOverText.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f - 50.f));
+          window.draw(gameOverText);
+
+          sf::Text scoreText(font, "Final Score: " + std::to_string(score), 40);
+          scoreText.setFillColor(sf::Color::White);
+          sf::FloatRect scoreBounds = scoreText.getLocalBounds();
+          scoreText.setPosition(sf::Vector2f(window.getSize().x * 0.5f, window.getSize().y * 0.5f + 30.f));
+          window.draw(scoreText);
+
+        }
     }
 
     window.display();
